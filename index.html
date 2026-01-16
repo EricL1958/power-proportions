@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Power Analysis Tool</title>
+    <script src="https://cdn.jsdelivr.net/npm/@stlite/mountable@0.58.0/build/stlite.js"></script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script>
+      stlite.mount({
+        requirements: ["statsmodels", "numpy", "matplotlib", "pandas"],
+        entrypoint: "app.py",
+        files: {
+          "app.py": `
+import streamlit as st
+import math
+import numpy as np
+import matplotlib
+matplotlib.use('Agg') 
+import matplotlib.pyplot as plt
+from statsmodels.stats.power import NormalIndPower, GofChisquarePower
+
+st.set_page_config(page_title="Power Tool", layout="wide")
+
+def cohen_h(p1, p2):
+    p1 = max(1e-10, min(1 - 1e-10, p1))
+    p2 = max(1e-10, min(1 - 1e-10, p2))
+    return abs(2 * (math.asin(math.sqrt(p1)) - math.asin(math.sqrt(p2))))
+
+st.title("📊 Proportions Power Analysis")
+
+st.sidebar.header("Parameters")
+p1 = st.sidebar.number_input("Proportie 1 (p1)", 0.01, 0.99, 0.50)
+p2 = st.sidebar.number_input("Proportie 2 (p2)", 0.01, 0.99, 0.60)
+alpha = st.sidebar.number_input("Alpha", 0.001, 0.05, 0.05, format="%.3f")
+ratio = st.sidebar.number_input("Ratio (n2/n1)", 0.1, 10.0, 1.0)
+h = cohen_h(p1, p2)
+st.sidebar.info(f"**Cohen's h:** {h:.4f}")
+
+st.header("Sample Size & Power Curves")
+target_power = st.number_input("Gewenste Power", 0.1, 0.99, 0.80)
+
+if st.button("Start Berekening"):
+    analysis_norm = NormalIndPower()
+    n1_norm = analysis_norm.solve_power(effect_size=h, power=target_power, alpha=alpha, ratio=ratio)
+    analysis_chi = GofChisquarePower()
+    n_chi = analysis_chi.solve_power(effect_size=h, n_bins=2, alpha=alpha, power=target_power)
+    
+    res_col1, res_col2 = st.columns(2)
+    with res_col1:
+        st.subheader("Method A: Two Proportions")
+        st.write(f"Sample size n1: **{math.ceil(n1_norm)}**")
+        st.write(f"Totaal (n1+n2): **{math.ceil(n1_norm*(1+ratio))}**")
+    with res_col2:
+        st.subheader("Method B: One Prop. vs Pop.")
+        st.write(f"Totaal benodigde N: **{math.ceil(n_chi)}**")
+    
+    st.divider()
+    plot_col1, plot_col2 = st.columns(2)
+    with plot_col1:
+        fig1, ax1 = plt.subplots()
+        n_range1 = np.arange(max(5, int(n1_norm*0.2)), int(n1_norm*1.8), 2)
+        p_vals1 = [analysis_norm.power(effect_size=h, nobs1=n, alpha=alpha, ratio=ratio) for n in n_range1]
+        ax1.plot(n_range1, p_vals1, color='tab:blue', linewidth=2)
+        ax1.axhline(y=target_power, color='r', linestyle='--', alpha=0.6)
+        ax1.set_title("NormalIndPower (2 Props)")
+        ax1.set_xlabel("Sample Size (n1)")
+        ax1.set_ylabel("Power")
+        ax1.grid(True, alpha=0.3)
+        st.pyplot(fig1)
+    with plot_col2:
+        fig2, ax2 = plt.subplots()
+        n_range2 = np.arange(max(5, int(n_chi*0.2)), int(n_chi*1.8), 2)
+        p_vals2 = [analysis_chi.power(effect_size=h, nobs=n, n_bins=2, alpha=alpha) for n in n_range2]
+        ax2.plot(n_range2, p_vals2, color='tab:green', linewidth=2)
+        ax2.axhline(y=target_power, color='r', linestyle='--', alpha=0.6)
+        ax2.set_title("Chi-Square GOF (1 Prop)")
+        ax2.set_xlabel("Total Sample Size (N)")
+        ax2.set_ylabel("Power")
+        ax2.grid(True, alpha=0.3)
+        st.pyplot(fig2)
+`
+        }
+      }, document.getElementById("root"));
+    </script>
+  </body>
+</html>
